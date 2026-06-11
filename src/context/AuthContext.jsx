@@ -1,4 +1,5 @@
 import { createContext, useContext, useState } from 'react';
+import api from '../api/connect';
 
 const AuthContext = createContext();
 
@@ -7,15 +8,23 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [userRole, setUserRole] = useState(null); // 'user' atau 'admin'
 
-  const login = (username, password, role = 'user') => {
-    // Dummy login - hanya untuk testing
-    if (username && password) {
+  const login = async (username, password) => {
+    try {
+      const res = await api.signIn({ Email: username, password });
+      if (!res.ok) {
+        const message = res.data?.message || 'Login gagal';
+        return { success: false, message };
+      }
+
+      const payload = res.data || {};
+      const role = payload.role || (username && username.toLowerCase().includes('admin') ? 'admin' : 'user');
       setIsLoggedIn(true);
-      setUser({ username, role });
+      setUser({ username: payload.Email || username, role });
       setUserRole(role);
-      return true;
+      return { success: true };
+    } catch (err) {
+      return { success: false, message: err.message || 'Login error' };
     }
-    return false;
   };
 
   const logout = () => {

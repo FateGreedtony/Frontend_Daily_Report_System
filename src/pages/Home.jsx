@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import api from '../api/connect';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 
@@ -19,28 +20,38 @@ export default function Home() {
   ]);
 
   const [newTask, setNewTask] = useState('');
-  const [historyReports, setHistoryReports] = useState([
-    {
-      id: 1,
-      date: '2026-04-27',
-      internName: 'Malik',
-      title: 'Belajar HTML',
-      description: 'Mempelajari struktur dasar HTML dan membuat halaman sederhana',
-      totalTasks: 3,
-      completedTasks: 2,
-      status: 'Progress',
-    },
-    {
-      id: 2,
-      date: '2026-04-28',
-      internName: 'Malik',
-      title: 'Belajar CSS',
-      description: 'Mempelajari styling dasar CSS dan menerapkannya pada halaman HTM.',
-      totalTasks: 4,
-      completedTasks: 4,
-      status: 'Selesai',
-    },
-  ]);
+  const [historyReports, setHistoryReports] = useState([]);
+
+  useEffect(() => {
+    let mounted = true;
+    const load = async () => {
+      try {
+        const [r1, r2] = await Promise.all([api.getReports(), api.getReportLists()]);
+        const lists = r2.data || [];
+        const counts = {};
+        lists.forEach((l) => {
+          if (l.IsChildFrom) counts[l.IsChildFrom] = (counts[l.IsChildFrom] || 0) + 1;
+        });
+
+        const reports = (r1.data || []).map((r) => ({
+          id: r._id,
+          date: r.Date ? new Date(r.Date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+          internName: r.CreatedBy || 'peserta',
+          title: r.title || '-',
+          description: r.Description || '-',
+          totalTasks: counts[r._id] || 0,
+          completedTasks: 0,
+          status: r.Isfinished ? 'Selesai' : 'Progress',
+        }));
+
+        if (mounted) setHistoryReports(reports);
+      } catch (e) {
+        console.error(e);
+      }
+    };
+    load();
+    return () => (mounted = false);
+  }, []);
 
   const handlePlanChange = (e) => {
     const { name, value } = e.target;
@@ -53,27 +64,39 @@ export default function Home() {
   const handlePlanSubmit = (e) => {
     e.preventDefault();
     if (planForm.title.trim()) {
-      const newReport = {
-        id: Date.now(),
-        date: planForm.date,
-        internName: user?.username || 'peserta',
-        title: planForm.title,
-        description: planForm.description || '-',
-        totalTasks: tasks.length,
-        completedTasks: tasks.filter((task) => task.completed).length,
-        status:
-          tasks.length > 0 && tasks.every((task) => task.completed)
-            ? 'Selesai'
-            : 'Rencana Tersimpan',
-      };
-
-      setHistoryReports((prev) => [newReport, ...prev]);
-      setPlanForm({
-        title: '',
-        description: '',
-        date: new Date().toISOString().split('T')[0],
-      });
-      alert('Rencana kegiatan telah disimpan!');
+      (async () => {
+        try {
+          const payload = {
+            title: planForm.title,
+            Description: planForm.description || '-',
+            CreatedBy: user?.username || 'peserta',
+          };
+          const res = await api.createReport(payload);
+          if (res.ok) {
+            const created = res.data;
+            setHistoryReports((prev) => [
+              {
+                id: created._id || Date.now(),
+                date: created.Date ? new Date(created.Date).toISOString().split('T')[0] : planForm.date,
+                internName: created.CreatedBy || user?.username || 'peserta',
+                title: created.title || planForm.title,
+                description: created.Description || planForm.description || '-',
+                totalTasks: 0,
+                completedTasks: 0,
+                status: created.Isfinished ? 'Selesai' : 'Rencana Tersimpan',
+              },
+              ...historyReports,
+            ]);
+            setPlanForm({ title: '', description: '', date: new Date().toISOString().split('T')[0] });
+            alert('Rencana kegiatan telah disimpan!');
+          } else {
+            alert(res.data?.message || 'Gagal menyimpan rencana');
+          }
+        } catch (err) {
+          console.error(err);
+          alert('Terjadi kesalahan saat menyimpan rencana');
+        }
+      })();
     }
   };
 
@@ -106,22 +129,39 @@ export default function Home() {
       alert('Checklist masih kosong, tambahkan kegiatan terlebih dahulu.');
       return;
     }
-
-    const completedTasks = tasks.filter((task) => task.completed).length;
-    const reportFromChecklist = {
-      id: Date.now() + 1,
-      date: new Date().toISOString().split('T')[0],
-      internName: user?.username || 'peserta',
-      title: planForm.title || 'Checklist Kegiatan Harian',
-      description: planForm.description || 'Laporan dibuat dari checklist kegiatan.',
-      totalTasks: tasks.length,
-      completedTasks,
-      status: completedTasks === tasks.length ? 'Selesai' : 'Progress',
-    };
-
-    setHistoryReports((prev) => [reportFromChecklist, ...prev]);
-    alert('Checklist berhasil disimpan ke riwayat daily report!');
-    setActiveTab('history');
+    (async () => {
+      try {
+        const payload = {
+          title: planForm.title || 'Checklist Kegiatan Harian',
+          Description: planForm.description || 'Laporan dibuat dari checklist kegiatan.',
+          CreatedBy: user?.username || 'peserta',
+        };
+        const res = await api.createReport(payload);
+        if (res.ok) {
+          const created = res.data;
+          setHistoryReports((prev) => [
+            {
+              id: created._id || Date.now() + 1,
+              date: created.Date ? new Date(created.Date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+              internName: created.CreatedBy || user?.username || 'peserta',
+              title: created.title || payload.title,
+              description: created.Description || payload.Description,
+              totalTasks: tasks.length,
+              completedTasks: tasks.filter((t) => t.completed).length,
+              status: created.Isfinished ? 'Selesai' : 'Progress',
+            },
+            ...historyReports,
+          ]);
+          alert('Checklist berhasil disimpan ke riwayat daily report!');
+          setActiveTab('history');
+        } else {
+          alert(res.data?.message || 'Gagal menyimpan checklist');
+        }
+      } catch (err) {
+        console.error(err);
+        alert('Terjadi kesalahan saat menyimpan checklist');
+      }
+    })();
   };
 
   if (!isLoggedIn) {

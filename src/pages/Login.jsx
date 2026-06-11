@@ -19,18 +19,20 @@ export default function Login() {
       return;
     }
 
-    const success = login(username, password, role);
-    if (success) {
-      setUsername('');
-      setPassword('');
-      if (role === 'admin') {
-        navigate('/admin');
+    (async () => {
+      const result = await login(username, password);
+      if (result.success) {
+        setUsername('');
+        setPassword('');
+        if (result.role === 'admin' || role === 'admin') {
+          navigate('/admin');
+        } else {
+          navigate('/');
+        }
       } else {
-        navigate('/');
+        setError(result.message || 'Login gagal');
       }
-    } else {
-      setError('Login gagal');
-    }
+    })();
   };
 
   return (

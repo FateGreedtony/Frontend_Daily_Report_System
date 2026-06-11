@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import api from '../api/connect';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 
@@ -8,38 +9,40 @@ export default function AdminDashboard() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [activeMenu, setActiveMenu] = useState('reports');
 
-  const [interns, setInterns] = useState([
-    { id: 1, name: 'tian', email: 'tianhomo123@educourse.id', status: 'active' },
-    { id: 2, name: 'adit', email: 'aditagartha@educourse.id', status: 'active' },
-    { id: 3, name: 'malik', email: 'malikgantengrajinnabungdanberbaktikepadaorangtua@educourse.id', status: 'active' },
-  ]);
+  const [interns, setInterns] = useState([]);
+  const [dailyReports, setDailyReports] = useState([]);
 
-  const [dailyReports, setDailyReports] = useState([
-    {
-      id: 1,
-      intern: 'tian',
-      date: '2026-04-29',
-      plan: 'Membuat komponen tombol',
-      completed: true,
-      tasks: 3,
-    },
-    {
-      id: 2,
-      intern: 'adit',
-      date: '2026-04-30',
-      plan: 'Testing halaman login',
-      completed: true,
-      tasks: 5,
-    },
-    {
-      id: 3,
-      intern: 'malik',
-      date: '2026-04-31',
-      plan: 'Dokumentasi API',
-      completed: false,
-      tasks: 2,
-    },
-  ]);
+  useEffect(() => {
+    let mounted = true;
+    const load = async () => {
+      try {
+        const [r1, r2] = await Promise.all([api.getReports(), api.getReportLists()]);
+        const reports = (r1.data || []).map((r) => ({
+          id: r._id,
+          intern: r.CreatedBy || 'unknown',
+          date: r.Date ? new Date(r.Date).toISOString().split('T')[0] : '',
+          plan: r.title || r.Description || '-',
+          completed: !!r.Isfinished,
+          tasks: 0,
+        }));
+
+        const lists = r2.data || [];
+        const counts = {};
+        lists.forEach((l) => {
+          if (l.IsChildFrom) counts[l.IsChildFrom] = (counts[l.IsChildFrom] || 0) + 1;
+        });
+        const reportsWithCounts = reports.map((rep) => ({ ...rep, tasks: counts[rep.id] || 0 }));
+
+        if (mounted) {
+          setDailyReports(reportsWithCounts);
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    };
+    load();
+    return () => (mounted = false);
+  }, []);
 
   const [showAddInternForm, setShowAddInternForm] = useState(false);
   const [internForm, setInternForm] = useState({
